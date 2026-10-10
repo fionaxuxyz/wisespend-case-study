@@ -1,798 +1,137 @@
-# 知省 WiseSpend｜消费复盘与决策 AI Agent
+# 知省 WiseSpend
 
-> 面向真实个人账本数据的 AI 消费复盘与决策产品  
-> `React` · `Spring Boot` · `Python / FastAPI` · `OpenAI Agents SDK` · `PostgreSQL` · `RAG` · `Long-term Memory`
+### 记账是起点，理解自己的消费才是答案。
 
-WiseSpend 基于原有个人记账 Web 应用，从 0→1 升级为面向真实账本数据的消费决策 Agent。
+**WiseSpend · AI-powered personal finance reflection**
 
-产品支持账本问答、多轮追问、预算建议、消费复盘、长期偏好与财务知识解释。整体设计重点不是把 LLM 做成一个“会聊天的界面”，而是让它能够基于真实业务数据、明确的 evidence 和受约束的 execution flow 生成可验证回答。
+> 你记得上个月花了多少钱吗？你知道为什么花了那么多吗？  
+> 很多人认真记账，却从不回头看。分类、图表和流水越积越多，真正影响消费习惯的原因仍然藏在数字里。
 
-> 🔒 **Source code is private.**  
-> 本仓库仅用于展示产品定位、System Architecture、Agent Engineering、RAG / Memory 设计及部分产品效果，不包含业务源码。
+WiseSpend 是一款围绕**消费复盘**设计的个人财务产品：将日常记账、可视化分析与具有上下文记忆的 AI 助手结合起来，让用户用聊天的方式理解账单、发现消费变化、回顾预算与目标。
 
----
-
-## Product Overview
-
-传统个人财务产品通常可以回答：
-
-- 这个月花了多少钱
-- 哪个分类消费最多
-- 是否超过预算
-
-WiseSpend 希望进一步回答：
-
-- “这个月外卖是不是比上个月多？”
-- “9 月哪些类别超预算了？”
-- “最近咖啡是不是花得更多了？”
-- “那上个月呢？”
-- “我之前说咖啡预算是多少？”
-- “什么是沉没成本？”
-
-因此整个 Agent 围绕三类 evidence source 构建：
-
-```text
-Finance
-真实账本数据
-
-Memory
-长期用户偏好与目标
-
-Knowledge
-外部财务知识
-```
-
-核心原则：
-
-> **LLM 负责理解与规划，确定性程序负责执行与校验。**
-
-LLM 主要负责：
-
-```text
-Intent Understanding
-Task Planning
-Natural Language Generation
-```
-
-程序主要负责：
-
-```text
-Tool Execution
-Data Calculation
-Permission Control
-Evidence Validation
-State Management
-```
-
-账本事实来源始终是 Backend / Database，而不是 LLM。
+它尤其适合不喜欢复杂预算表、很难坚持定期复盘的「P 人」：**不用先成为一个自律的财务管理者，也能开始了解自己的钱去了哪里。**
 
 ---
 
-## System Architecture
+## 从记账到复盘
 
-```text
-React Frontend
-      │
-      ▼
-Spring Boot
-      │
-      ├── Transaction / Budget / Account
-      ├── Financial Analytics
-      └── PostgreSQL
-      │
-      ▼
-Python AI Service
-      │
-      ├── Semantic Planner
-      ├── Canonical Plan
-      ├── Evidence Plan
-      ├── Tool Execution
-      ├── Memory
-      ├── Knowledge Retrieval
-      ├── Evidence Selector
-      └── Validation
-      │
-      ▼
-LLM
-```
+传统记账软件擅长告诉你「发生了什么」；WiseSpend 更希望帮你回答「这意味着什么」。
 
-AI Service 不作为账本事实源。
+**一次自然的使用体验：**
 
-`Transaction / Budget / Account` 等核心业务数据始终由 Spring Boot 与 PostgreSQL 管理；AI 层只负责理解用户意图、组织任务、调用 Tool、获取 evidence 并生成最终回答。
+> **你：** 我最近是不是点外卖太多了？  
+> **WiseSpend：** 先看看近期外卖支出，再与上个周期对比。  
+> **你：** 那上个月呢？  
+> **WiseSpend：** 延续刚才关于外卖的讨论，切换时间范围。  
+> **你：** 我之前说过想把外卖预算控制在多少吗？  
+> **WiseSpend：** 结合已保存的长期目标与偏好，帮助你回顾原本的计划。
+
+以上为**功能示意对话**，并非真实用户数据或实测回答截图。
+
+### 让产品真正有用的四件事
+
+- **看得清：** Dashboard、交易记录、分类与预算，让账本数据一目了然。
+- **问得出：** 用自然语言查询支出、比较周期、理解消费变化，而非反复筛选报表。
+- **接得住：** 支持多轮上下文和跨会话长期记忆，理解「那上个月呢」以及用户主动设定的消费目标。
+- **想得明白：** 将财务知识与个人账本结合，为复盘提供背景与参考，而不是单纯制造焦虑或灌输自律。
+
+**产品愿景：让每一次记账，都成为一次更轻松的自我了解。**
 
 ---
 
-## Agent Harness
+## Product Architecture
 
-WiseSpend 设计了一套受约束的 Agent execution pipeline：
+WiseSpend 不是在账本旁边简单添加一个聊天框，而是把 AI 能力接入真实的消费数据与现有业务系统。
 
-```text
-User Query
-    ↓
-Semantic Planner
-    ↓
-Canonical Plan
-    ↓
-Evidence Plan
-    ↓
-Tool Execution
-    ↓
-Validation
-    ↓
-Evidence Selection
-    ↓
-Final Response
+```mermaid
+flowchart TD
+    U["User · Web Experience"] --> FE["React · Dashboard / Budget / AI Chat"]
+    FE --> API["Spring Boot · Business API"]
+    API --> DB[("PostgreSQL · Accounts / Transactions / Budgets")]
+    FE --> AI["Python / FastAPI · AI Service"]
+    AI --> AG["OpenAI Agents SDK + Custom Orchestration"]
+    AG --> FT["Finance Tools"]
+    FT --> API
+    AG --> MEM["Long-term Memory"]
+    AG --> RAG["Finance Knowledge · Hybrid RAG"]
+    RAG --> VDB[("BM25 / multilingual E5 / pgvector")]
+    AG --> LLM["LLM"]
 ```
 
-### Semantic Planner
+**架构设计的重点：**
 
-负责理解自然语言问题及多轮上下文。
+**业务与 AI 解耦。** Spring Boot 与 PostgreSQL 负责交易、预算和账户等可靠的数据管理；AI Service 负责理解问题、调用业务工具、组织上下文与生成解释。**LLM 不是账本事实来源。**
 
-例如：
+**会话上下文与长期记忆分开处理。** 产品既能延续当前话题，也能在合适的时候回顾用户明确表达并保存的偏好和目标。
 
-```text
-“那上个月呢？”
-```
-
-系统需要继承上一轮的 subject，同时覆盖 period。
-
-Planner 负责语义理解，而不是依赖大量 Regex / keyword rules 硬编码用户表达。
-
-### Canonical Plan
-
-将自然语言意图转换成结构化、可执行的内部表示。
-
-例如：
-
-```text
-Intent:
-COMPARE_SPENDING
-
-Subject:
-Food Delivery
-
-Current Period:
-September
-
-Comparison Period:
-August
-```
-
-这样可以将：
-
-```text
-“用户说了什么”
-```
-
-与：
-
-```text
-“程序应该执行什么”
-```
-
-分离。
-
-### Evidence Plan
-
-Agent 在回答之前，先确定回答问题所需要的 evidence。
-
-例如：
-
-```text
-“我这个月咖啡是不是花太多了？”
-```
-
-可能需要：
-
-```text
-Current Coffee Spending
-Previous Period Coffee Spending
-Transaction Evidence
-User Coffee Budget Memory
-```
-
-只有拿到足够 evidence 后，系统才允许进入最终回答。
+**结构化查询与知识检索各司其职。** 消费金额与预算走业务 API / SQL；财务概念与参考知识走检索增强生成（RAG）。
 
 ---
 
-## Finance / Memory / Knowledge
+## Agent Engineering
 
-WiseSpend 将 Agent 能力拆分为三个独立 evidence domain。
+**Base:** [OpenAI Agents SDK — Python](https://openai.github.io/openai-agents-python/)  
+**Approach:** SDK primitives + purpose-built orchestration
 
-### Finance
+我选择在成熟 SDK 之上保留定制化的 Python Agent Orchestration，而不是把所有业务判断交给一个黑盒流程。
 
-负责所有真实账本事实：
+- **复用成熟能力：** Tool Calling 与 Tracing 等基础设施由 SDK 提供。
+- **保留产品控制权：** 业务工具边界、会话状态、数据校验与异常处理可以按财务场景定制。
+- **便于产品演进：** 记账业务可以独立于模型或 Agent 层迭代，不必将每个功能绑定到特定提示词或模型。
 
-```text
-Transaction
-Category
-Merchant
-Budget
-Account
-Period Comparison
-Spending Pattern
-```
+这并非为了「从零重写一个框架」，而是**不重复造基础轮子，同时把重要的业务行为掌握在自己手中**。
 
-典型 Tool：
-
-```text
-getSpendingSummary
-getCategoryBreakdown
-comparePeriods
-getTransactionEvidence
-detectSpendingPattern
-getBudgetStatus
-```
-
-Finance Tool 最终查询真实 Backend / Database 数据。
-
-### Memory
-
-负责跨会话长期用户信息，例如：
-
-```text
-“以后咖啡每个月控制在 400 元以内。”
-
-“我最近想少点外卖。”
-
-“我正在为旅行存钱。”
-```
-
-Memory 不等于保存完整聊天记录。
-
-系统将长期有效信息转换为结构化 memory claim，并支持：
-
-```text
-Create
-Update
-Supersede
-Retrieve
-```
-
-例如用户先说：
-
-```text
-coffee budget = 300
-```
-
-后来修改：
-
-```text
-coffee budget = 400
-```
-
-系统通过 structured claim 与 `SUPERSEDE` 机制让新偏好覆盖旧偏好，避免长期记忆中同时存在相互冲突的信息。
-
-### Knowledge
-
-用于回答并非来自个人账本的财务知识问题，例如：
-
-```text
-“沉没成本是什么？”
-
-“CPI 为什么会上升？”
-
-“预算应该怎么调整？”
-```
-
-这些内容通过独立 Finance Knowledge Base 获取，而不是与用户账本数据混在一起检索。
+官方参考：[Agents SDK Documentation](https://developers.openai.com/api/docs/guides/agents/sdk) · [Tracing Documentation](https://openai.github.io/openai-agents-python/tracing/)
 
 ---
 
-## RAG Pipeline
+## Long-term Memory & Knowledge
 
-WiseSpend 构建了面向中英文 Finance Knowledge 的 Hybrid RAG Pipeline：
+### 有记忆的财务对话
 
-```text
-PDF / Knowledge Source
-        ↓
-Hierarchical Chunking
-        ↓
-BM25
-+
-multilingual E5
-+
-pgvector
-        ↓
-RRF
-        ↓
-Evidence Selector
-        ↓
-Relevant Evidence
-        ↓
-LLM
-```
+WiseSpend 能够结合当前会话与已保存的长期用户偏好，让消费对话不止停留在一次性问答。预算目标、消费偏好和多轮话题形成持续的复盘体验。
 
-主要包括：
+### Hybrid RAG
 
-- `Hierarchical Chunking`
-- `BM25`
-- `multilingual E5`
-- `pgvector`
-- `RRF`
-- `Evidence Selector`
-
-针对长篇 PDF，系统进行层级化解析与知识切分。
-
-同时针对中文 Query 做跨语言 retrieval，使用户可以使用中文问题检索英文原始 Finance 文献。
-
-当前 Hybrid Retrieval evaluation：
+财务知识模块组合关键词与语义检索，兼顾专业术语匹配和自然语言理解：
 
 ```text
-Recall@5: 82.2%
-MRR:      0.741
+Finance knowledge → Chunking → BM25 + multilingual E5 / pgvector
+                                    ↓
+                              RRF ranking
+                                    ↓
+                          Relevant evidence → Answer
 ```
 
----
+**Research & implementation references**
 
-## Why Not Embed Transactions?
+- [Multilingual E5 Text Embeddings: A Technical Report (2024)](https://arxiv.org/abs/2402.05672) — 多语言语义向量检索。
+- [Reciprocal Rank Fusion (SIGIR 2009)](https://doi.org/10.1145/1571941.1572114) — 融合不同检索结果排序的方法。
+- [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/) — Agent、Tools 与 Tracing 的官方实现参考。
 
-WiseSpend 没有把 Transaction 全部做成 Vector Embedding。
-
-交易数据本身具有明确结构：
-
-```text
-amount
-merchant
-category
-date
-description
-account
-```
-
-对于：
-
-```text
-“9 月瑞幸花了多少钱？”
-```
-
-SQL / Business Tool 可以提供确定结果。
-
-Vector Search 更适合：
-
-```text
-“哪些知识和这个问题语义相关？”
-```
-
-因此系统明确区分：
-
-```text
-Structured Business Data
-        ↓
-SQL / Tool
-
-Unstructured Knowledge
-        ↓
-RAG / Vector Retrieval
-```
-
-避免为了“用了 RAG”而把所有数据都塞进 Vector Database。
-
----
-
-## Evidence Grounding
-
-WiseSpend 不允许 Agent 在 evidence 不完整时继续生成一个看起来合理的答案。
-
-```text
-Plan
- ↓
-Required Evidence
- ↓
-Tool / Retrieval
- ↓
-Evidence Selector
- ↓
-Validation
- ↓
-Enough Evidence?
- ├── Yes → Final Answer
- └── No  → Repair / Clarify / Fail Closed
-```
-
-核心机制包括：
-
-```text
-Evidence Gating
-Layered Bounded Repair
-Fail-Closed
-```
-
-如果关键 evidence 缺失，系统会进入 repair、clarification 或 fail-safe path，而不是让模型自行补全事实。
-
----
-
-## Agent Runtime
-
-Agent Runtime 基于：
-
-```text
-OpenAI Agents SDK
-+
-Custom Python Orchestration
-```
-
-Agents SDK 提供基础能力，例如：
-
-```text
-Tool Calling
-Tracing
-```
-
-自定义 orchestration 负责控制：
-
-```text
-Planning
-State
-Evidence
-Validation
-Repair
-Failure Handling
-```
-
-这样既复用 SDK 的通用能力，又保留关键业务链路的 deterministic control。
-
----
-
-## Multi-turn Conversation
-
-WiseSpend 支持连续业务语境中的多轮追问。
-
-例如：
-
-```text
-User:
-这个月外卖花了多少？
-
-Agent:
-410 元。
-
-User:
-那上个月呢？
-```
-
-第二轮并没有重新出现：
-
-```text
-subject = 外卖
-```
-
-因此系统需要继承上一轮 conversation state，同时覆盖：
-
-```text
-period
-```
-
-新的独立问题则必须与旧问题隔离。
-
-多轮对话不是简单地：
-
-```text
-把全部聊天记录重新发给 LLM
-```
-
-而是通过 structured state 显式管理：
-
-```text
-inherit
-override
-reset
-isolate
-```
-
----
-
-## Reliability
-
-Agent 本质上是存在不确定性的 runtime component。
-
-因此 WiseSpend 对 reliability 单独做了工程设计：
-
-```text
-Timeout
-Request Cancellation
-Bounded Retry
-Failure Classification
-Health Guard
-Fail-Closed
-Bounded Repair
-```
-
-例如模型 API 暂时 unavailable 时：
-
-- 不无限 Retry
-- 不进入无限 Agent loop
-- 不在缺失证据时继续生成答案
-
-每种 recovery path 都有明确边界。
-
----
-
-## Evaluation & Observability
-
-WiseSpend 建立了分层 Evaluation，而不是只通过人工“问几句”判断系统是否可用。
-
-```text
-Planner
-Tool
-Retrieval
-Evidence Selection
-Citation
-Final Answer
-```
-
-每一层都可以独立判断 bad case 出现在哪里。
-
-### Agent Tracing
-
-一次完整请求可以追踪：
-
-```text
-User Query
-    ↓
-Semantic Plan
-    ↓
-Canonical Plan
-    ↓
-Evidence Plan
-    ↓
-Tool Calls
-    ↓
-Tool Results
-    ↓
-Retrieval
-    ↓
-Evidence Selection
-    ↓
-Validation
-    ↓
-Final Response
-```
-
-通过 Trace 可以定位：
-
-```text
-Planner Error
-Tool Error
-Retrieval Error
-Evidence Error
-Generation Error
-```
-
-而不是简单归因成：
-
-```text
-“LLM 又答错了。”
-```
-
-### Regression Workflow
-
-典型 bad case 会被转化为 Regression Case：
-
-```text
-Production / Testing Failure
-        ↓
-Trace Analysis
-        ↓
-Failure Classification
-        ↓
-Regression Case
-        ↓
-Fix
-        ↓
-Replay
-```
-
-这样 Agent 行为可以通过 evaluation 持续迭代，而不是每次修改 Prompt 后重新人工试一遍。
-
----
-
-## Full-stack Integration
-
-### Frontend
-
-```text
-React
-JavaScript / TypeScript
-REST API
-SSE
-```
-
-负责：
-
-- Financial Dashboard
-- Transactions
-- Budget
-- AI Chat
-- Streaming Response
-
-### Application Backend
-
-```text
-Spring Boot
-PostgreSQL
-```
-
-负责：
-
-- Account
-- Transaction
-- Category
-- Budget
-- Financial Calculation
-
-是个人账本事实的 Source of Truth。
-
-### AI Service
-
-```text
-Python
-FastAPI
-OpenAI Agents SDK
-```
-
-负责：
-
-- Planning
-- Tool Calling
-- RAG
-- Memory
-- Evidence Validation
-- Agent Runtime
-
-### Data & Infrastructure
-
-```text
-PostgreSQL
-pgvector
-Redis
-Docker
-Git
-```
-
----
-
-## Selected Product Workflows
-
-### Finance Query
-
-```text
-“这个月外卖花了多少钱？”
-        ↓
-Semantic Planner
-        ↓
-Finance Evidence Plan
-        ↓
-Tool
-        ↓
-Backend / SQL
-        ↓
-Structured Financial Result
-        ↓
-Grounded Answer
-```
-
-### Finance + Memory
-
-```text
-“我这个月咖啡是不是花太多了？”
-        ↓
-Finance
-当前咖啡消费
-
-+
-
-Memory
-用户咖啡预算 / preference
-
-        ↓
-Combined Evidence
-        ↓
-Final Answer
-```
-
-### Knowledge Query
-
-```text
-“沉没成本是什么？”
-        ↓
-Knowledge Domain
-        ↓
-Hybrid Retrieval
-        ↓
-Evidence Selector
-        ↓
-Finance Knowledge Evidence
-        ↓
-Answer + Citation
-```
-
----
-
-## My Work
-
-作为个人项目，我负责产品设计、Agent Architecture 与 Full-stack Development。
-
-主要工作包括：
-
-- 将原个人记账 Web 应用升级为消费决策 AI Agent
-- 完成 React AI Chat 与既有账本产品的端到端集成
-- 设计 `Semantic Planner → Canonical Plan → Evidence Plan → Tool Execution → Validation` Agent harness
-- 划分 `Finance / Memory / Knowledge` 三类 evidence domain
-- 设计 Finance Tool 与真实 Backend 数据之间的调用链路
-- 构建 Long-term Memory 与 structured claim 更新机制
-- 构建 `Hierarchical Chunking + BM25 + multilingual E5 + pgvector + RRF + Evidence Selector` Hybrid RAG
-- 基于 `OpenAI Agents SDK + Custom Python Orchestration` 实现 Agent Runtime
-- 建立 `Evidence Gating / Bounded Repair / Fail-Closed` 机制
-- 实现 `Timeout / Request Cancellation / Bounded Retry`
-- 建立 `Planner / Tool / Retrieval / Evidence / Citation / Final Answer` 分层 Evaluation
-- 使用 Agent tracing 分析 bad case，并沉淀 Regression Workflow
+这些文献与文档是相关技术方案的参考依据，并不代表论文作者参与了本项目。
 
 ---
 
 ## Tech Stack
 
-**Frontend**
-
-`React` `JavaScript` `TypeScript`
-
-**AI / Agent**
-
-`Python` `FastAPI` `OpenAI Agents SDK` `Tool Calling` `RAG` `Long-term Memory`
-
-**Retrieval**
-
-`BM25` `multilingual E5` `pgvector` `RRF`
-
-**Backend & Data**
-
-`Spring Boot` `PostgreSQL` `Redis`
-
-**Engineering**
-
-`Docker` `Git` `Tracing` `Evaluation`
+| Layer | Technology |
+| --- | --- |
+| Product UI | React · JavaScript / TypeScript |
+| Business Services | Java · Spring Boot |
+| AI Service | Python · FastAPI · OpenAI Agents SDK |
+| Data & Memory | PostgreSQL · Redis |
+| Knowledge Retrieval | BM25 · multilingual E5 · pgvector · RRF |
+| Infrastructure | Docker · Git |
 
 ---
 
-## Engineering Takeaway
+## Built as a Product
 
-WiseSpend 最核心的工程问题不是：
+WiseSpend 从个人记账 Web 应用延伸而来，由我独立负责产品方向、体验设计、AI Agent 架构与全栈实现。
 
-> **How do I make the LLM smarter?**
+我希望它不只是一个展示 AI 技术的 Demo，而是一款有明确使用场景的产品：**让不擅长定期复盘的人，也能借助 AI 建立对个人消费的理解。**
 
-而是：
+目前该仓库为公开 **Product Case Study**，用于展示产品定位与技术架构；完整业务源码不公开。
 
-> **How do I make an uncertain model reliable inside a deterministic software system?**
-
-最终设计围绕：
-
-```text
-LLM Understanding
-        +
-Structured Planning
-        +
-Business Tools
-        +
-Evidence
-        +
-RAG
-        +
-Memory
-        +
-Validation
-        +
-Evaluation
-        +
-Observability
-```
-
-让 Agent 从一个能够 Demo 的 Chatbot，变成一个 **可执行、可验证、可测试、可追踪的 application component**。
-
----
-
-## Screenshots
-
-1. `WiseSpend Dashboard`
-2. `AI Chat / Multi-turn Query`
-3. `Architecture / Agent Trace`
-
+> **WiseSpend — Don't just track your money. Understand it.**
